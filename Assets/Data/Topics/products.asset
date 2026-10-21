@@ -1,0 +1,35 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3e909ed5c06d87e4daf11c191599b067, type: 3}
+  m_Name: products
+  m_EditorClassIdentifier: 
+  topicId: products
+  displayName: "S\u1EA3n ph\u1EA9m"
+  icon: {fileID: 21300000, guid: 5969048b52290c645b6a0f5718e0b55f, type: 3}
+  subtitle: "Danh m\u1EE5c s\u1EA3n ph\u1EA9m ch\u1EE7 l\u1EF1c c\u1EE7a PV Gas"
+  headerImage: {fileID: 0}
+  stats:
+  - "3 nh\xE0 m\xE1y x\u1EED l\xFD kh\xED"
+  - "2 kho c\u1EA3ng LPG l\u1EDBn nh\u1EA5t Vi\u1EC7t Nam"
+  - "H\u01A1n 70% th\u1ECB ph\u1EA7n LPG n\u1ED9i \u0111\u1ECBa"
+  cards:
+  - image: {fileID: 0}
+    title: "Kh\xED kh\xF4 th\u01B0\u01A1ng ph\u1EA9m"
+    body: "Cung c\u1EA5p kh\xED thi\xEAn nhi\xEAn cho \u0111i\u1EC7n, \u0111\u1EA1m
+      v\xE0 c\xF4ng nghi\u1EC7p."
+  - image: {fileID: 0}
+    title: "LPG d\xE2n d\u1EE5ng & c\xF4ng nghi\u1EC7p"
+    body: "H\u1EC7 th\u1ED1ng ph\xE2n ph\u1ED1i LPG ph\u1EE7 kh\u1EAFp c\u1EA3 n\u01B0\u1EDBc."
+  - image: {fileID: 0}
+    title: Condensate
+    body: "S\u1EA3n ph\u1EA9m l\u1ECFng gi\xE1 tr\u1ECB cao ph\u1EE5c v\u1EE5 h\xF3a
+      d\u1EA7u."
