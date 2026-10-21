@@ -257,9 +257,9 @@
       "url": "https://packages.unity.com"
     },
     "jp.keijiro.klak.spout": {
-      "version": "file:C:/Users/Admin/Desktop/Logic_Unity_Models/UnityBuild_RatioAndSpoutSender/jp.keijiro.klak.spout-2.0.6.tgz",
+      "version": "file:jp.keijiro.klak.spout",
       "depth": 0,
-      "source": "local-tarball",
+      "source": "embedded",
       "dependencies": {
         "com.unity.modules.screencapture": "1.0.0"
       }
