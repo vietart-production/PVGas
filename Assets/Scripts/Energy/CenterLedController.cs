@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -91,23 +92,27 @@ public class CenterLedController : MonoBehaviour
     }
 
     // Called by FloorExperienceManager when a beam arrives at the flame.
-    // Returns true the moment the flame just reached full (8/8) - the
-    // caller uses that, not the spawn count, to decide when to start the
-    // finale, so it never fires before the last beam has actually landed.
+    // onFullyFilled fires once the fill bar has actually *finished*
+    // animating up to 8/8 - not the instant the 8th beam arrives, which is
+    // still mid fill-tween at that point (that was the bug: the finale used
+    // to start the moment this method was *called* for the 8th time, so it
+    // kicked off while the flame was still visibly ramping from 7/8 toward
+    // full instead of after it visually reached 100%).
     // Edge-triggered: once already full, extra late-arriving beams (any
     // dispatched just before the cap in FloorExperienceManager kicked in)
-    // are ignored instead of re-returning true and re-triggering the
-    // finale on every single one of them.
+    // are ignored instead of re-registering onFullyFilled and re-triggering
+    // the finale on every single one of them.
     // duration <= 0 uses the default fillStepDuration ramp; callers pass
     // their own duration to spread the fill out over however long their
     // beam takes to fully soak into the flame (see FloorExperienceManager).
-    public bool AdvanceFill(float duration = -1f)
+    public bool AdvanceFill(float duration = -1f, Action onFullyFilled = null)
     {
         EnsureInitialized();
         if (fillSteps >= totalSteps) return false;
 
         fillSteps++;
         float target = (float)fillSteps / totalSteps;
+        bool isFinalStep = fillSteps >= totalSteps;
 
         // A beam's soak-in can still be mid-flight when the next one
         // arrives (especially several close together) - kill the previous
@@ -117,7 +122,10 @@ public class CenterLedController : MonoBehaviour
             x => flameFillMaterial.SetFloat("_Fill", x), target, duration > 0f ? duration : fillStepDuration)
             .SetEase(Ease.Linear);
 
-        return fillSteps >= totalSteps;
+        if (isFinalStep && onFullyFilled != null)
+            fillTween.OnComplete(() => onFullyFilled());
+
+        return isFinalStep;
     }
 
     public void ResetFill()
@@ -203,13 +211,21 @@ public class CenterLedController : MonoBehaviour
         // DOTween rotation) instead of recomputing sin/cos per icon every
         // frame. Each icon counter-rotates at the same speed so it stays
         // upright while being carried around by its parent.
-        var pivotGO = new GameObject("FinaleOrbitPivot", typeof(RectTransform));
+        var pivotGO = new GameObject("FinaleOrbitPivot", typeof(RectTransform), typeof(Canvas));
         var pivot = (RectTransform)pivotGO.transform;
         pivot.SetParent(canvasRect, false);
         pivot.anchorMin = pivot.anchorMax = canvasRect.pivot;
         pivot.pivot = new Vector2(0.5f, 0.5f);
         pivot.anchoredPosition = center;
         pivot.SetAsLastSibling(); // drawn above the flame, emerging "out of" it
+        // Flame has its own override Canvas (sortingOrder 11, so it draws
+        // above BeamLayer's beam) - sibling order alone no longer puts
+        // anything above it, since a nested override Canvas sorts globally
+        // by sortingOrder, not by its position among its siblings. Give the
+        // icons a higher override so they still pop out on top of the flame.
+        var pivotCanvas = pivotGO.GetComponent<Canvas>();
+        pivotCanvas.overrideSorting = true;
+        pivotCanvas.sortingOrder = 12;
         finaleIconObjects.Add(pivotGO);
 
         float orbitPeriod = finaleOrbitDegPerSec > 0f ? 360f / finaleOrbitDegPerSec : 0f;

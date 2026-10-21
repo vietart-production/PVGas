@@ -47,6 +47,9 @@ Shader "PVGas/FlowRibbon"
         _Intensity ("Intensity", Float) = 1
         _TrailLength ("Trail lifetime behind the head (units, large = stays lit like before)", Float) = 100000
         _SpinSpeed ("Spin Speed (rotations/sec around the vertical axis, 0 = off)", Float) = 0
+        [HDR] _EmissionColor ("Emission Color", Color) = (0, 0, 0, 1)
+        _EmissionIntensity ("Emission Intensity", Float) = 0
+        _EmissionSpread ("Emission Spread (lower = tighter glow hugging the beam, higher = wider)", Float) = 1
     }
     SubShader
     {
@@ -105,6 +108,9 @@ Shader "PVGas/FlowRibbon"
             float _Intensity;
             float _TrailLength;
             float _SpinSpeed;
+            fixed4 _EmissionColor;
+            float _EmissionIntensity;
+            float _EmissionSpread;
 
             v2f vert(appdata v)
             {
@@ -215,7 +221,11 @@ Shader "PVGas/FlowRibbon"
                 float3 baseCol = _Color.rgb / max(max(_Color.r, _Color.g), max(_Color.b, 0.001));
                 baseCol = pow(baseCol, 1.5);
                 float3 deepCol = saturate(hueShift(baseCol, -0.4)) * 0.55;
-                float3 hotCol = lerp(baseCol, float3(1.0, 0.97, 0.78), 0.65);
+                // Less blend toward cream-white here - this used to wash the
+                // whole beam pale ("mờ nhạt"), losing the actual brand hue
+                // under a layer of white long before pixels even reach the
+                // compose step's own overexposure.
+                float3 hotCol = lerp(baseCol, float3(1.0, 0.97, 0.78), 0.3);
 
                 // End nodes are cheap: evaluate before the early-out so the cut
                 // never leaves a visible hard edge.
@@ -246,10 +256,14 @@ Shader "PVGas/FlowRibbon"
                 float invSlope = rsqrt(1.0 + slopeC * slopeC);
 
                 // The bundle breathes: fans out / bunches up, irregularly.
-                float breath = vnoise(g / _Wavelength * 1.3 - tm * _Flow * 0.7 + sd * 2.3 + 17.0) * 0.5 + 0.5;
+                // No "+ sd" here anymore - width breathing used to be
+                // phase-shifted per topic (via seed), which made some
+                // topics consistently read wider/narrower than others.
+                // Every beam now breathes on the exact same curve.
+                float breath = vnoise(g / _Wavelength * 1.3 - tm * _Flow * 0.7 + 17.0) * 0.5 + 0.5;
                 float Rloc = R * lerp(0.3, 1.25, breath * breath * (3.0 - 2.0 * breath));
 
-                float surge = 0.88 + 0.12 * vnoise(tm * 0.7 + sd);
+                float surge = 0.88 + 0.12 * vnoise(tm * 0.7);
 
                 // Ambient "holographic column" spin: when _SpinSpeed != 0 each
                 // filament's slot is reinterpreted as a fixed angular position
@@ -269,8 +283,11 @@ Shader "PVGas/FlowRibbon"
                 for (int n = 0; n < FILS; n++)
                 {
                     float fk = (float)n;
-                    float h1 = hash11(fk * 7.13 + sd);
-                    float h4 = hash11(fk * 9.91 + sd * 0.7 + 41.0);
+                    // No "+ sd" here either - the per-filament thickness/
+                    // brightness distribution (h1, h4) is now identical for
+                    // every beam, not biased by topic.
+                    float h1 = hash11(fk * 7.13);
+                    float h4 = hash11(fk * 9.91 + 41.0);
 
                     // Fixed slot inside the bundle - no independent lateral
                     // drift at all, so a filament's left-right order among
@@ -289,7 +306,7 @@ Shader "PVGas/FlowRibbon"
                     float d = (latMean - off) * invSlope;
 
                     // each filament surges and fades along its length...
-                    float nb = vnoise(g / _Wavelength * 1.6 - tm * _Flow * 0.9 + o * 4.0 + sd * 0.5) * 0.5 + 0.5;
+                    float nb = vnoise(g / _Wavelength * 1.6 - tm * _Flow * 0.9 + o * 4.0) * 0.5 + 0.5;
                     float life = lerp(0.1, 1.2, nb * nb * (3.0 - 2.0 * nb));
                     // ...and swells / thins
                     float nt = vnoise(g / _Wavelength * 2.4 - tm * _Flow + o * 3.0) * 0.5 + 0.5;
@@ -303,7 +320,7 @@ Shader "PVGas/FlowRibbon"
                     // per-filament gradient: hot core -> base -> deep edge, easing with path
                     float m = saturate(1.0 - 0.8 * abs(o) + 0.3 * (tc - 0.5) + 0.2 * (nb - 0.5));
                     float3 fc = lerp(deepCol, baseCol, smoothstep(0.0, 0.55, m));
-                    fc = lerp(fc, hotCol, smoothstep(0.5, 1.0, m) * 0.75);
+                    fc = lerp(fc, hotCol, smoothstep(0.5, 1.0, m) * 0.35);
 
                     acc += fc * inten;
                     glowAcc += baseCol * exp(-abs(d) / (sig * 8.0)) * 0.05 * life;
@@ -320,8 +337,11 @@ Shader "PVGas/FlowRibbon"
                 float latB = (latMean - W) * invSlope;
                 float Rb = max(Rloc * 1.4 + 10.0 * pinch, 0.5);
                 float prof = exp(-(latB * latB) / (Rb * Rb * 0.81));
-                float flowMod = 0.55 + 0.45 * (vnoise(g / _Wavelength * 1.1 - tm * _Flow * 0.8 + sd * 4.1 + 29.0) * 0.5 + 0.5);
-                float3 bodyCol = lerp(deepCol, baseCol, prof) * prof * flowMod * 0.72 * inPath;
+                float flowMod = 0.55 + 0.45 * (vnoise(g / _Wavelength * 1.1 - tm * _Flow * 0.8 + 29.0) * 0.5 + 0.5);
+                // Denser/more saturated surrounding body (was 0.72 - read as
+                // a faint wisp around the core instead of a solid glowing
+                // mass of actual brand color).
+                float3 bodyCol = lerp(deepCol, baseCol, prof) * prof * flowMod * 1.4 * inPath;
 
                 // ---- traveling head of the "shot" ---------------------------------
                 float headY = (hp - 0.07) * _Height;
@@ -333,7 +353,12 @@ Shader "PVGas/FlowRibbon"
                 // ---- compose: overexposed neon ---------------------------------------
                 float3 raw = 1.0 - exp(-acc * 2.2);
                 float lum = dot(acc, float3(0.3333, 0.3333, 0.3333));
-                raw += hotCol * smoothstep(1.3, 3.2, lum) * 0.8;
+                // This 2nd whitening layer (on top of hotCol already being
+                // blended into fc above) was the other half of what made
+                // the beam read pale - cut it down so the overlap-glow stays
+                // closer to the actual brand color instead of blowing to
+                // cream-white.
+                raw += hotCol * smoothstep(1.3, 3.2, lum) * 0.25;
                 raw += glowAcc + bodyCol + baseCol * (nodeGlow + headGlow);
 
                 // Gamma-lift brightening instead of a bigger multiplier
@@ -350,6 +375,19 @@ Shader "PVGas/FlowRibbon"
                 // pixel instead of running this whole (expensive, 14
                 // filaments x several noise taps each) shader twice.
                 float3 col = pow(saturate(raw), 1.0 / max(_Intensity, 0.05));
+
+                // True HDR emission (needs Camera HDR + a Bloom Volume to
+                // actually bloom/spread - without those this just looks
+                // brighter, same ceiling as everything above). Added after
+                // the saturate() above, unclamped, so it can push past 1.0
+                // for Bloom's threshold to catch. Falls off smoothly with
+                // lateral distance from the centerline (reusing the same
+                // Rb used for bodyCol) instead of being a flat block across
+                // the whole quad margin, which read as a big, hard-edged
+                // slab either side of the beam - _EmissionSpread scales how
+                // wide that falloff is.
+                float emissionProf = exp(-(latB * latB) / (Rb * Rb * 0.81 * max(_EmissionSpread, 0.05)));
+                col += _EmissionColor.rgb * _EmissionIntensity * mask * emissionProf;
 
                 return fixed4(col, outAlpha);
             }

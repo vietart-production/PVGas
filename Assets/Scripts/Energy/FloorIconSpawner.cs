@@ -14,6 +14,14 @@ public class FloorIconSpawner : MonoBehaviour
     [SerializeField] private EnergyTopicData[] energyTypes;
     [SerializeField] private float minSpawnDistance = 2f;
     [SerializeField] private float maxSpawnDistance = 3f;
+    // LiDAR/OSC track ids are not stable across occlusion/reacquisition - a
+    // person can keep their id reassigned while standing still near the
+    // tracker's own match-radius boundary (AugmentaOscInteraction.README.md,
+    // "Track matching"). Without this, that read as a brand new track and
+    // silently dropped all walked-distance progress. A lost id reappearing
+    // this close, this soon, is instead treated as the same person continuing.
+    [SerializeField] private float reattachRadius = 1.5f;
+    [SerializeField] private float reattachWindow = 0.5f;
 
     // Vector2 payload is the icon's local anchoredPosition inside floorArea
     // (pixel space, not meters) - what the cross-canvas beam needs.
@@ -26,10 +34,29 @@ public class FloorIconSpawner : MonoBehaviour
     // icon with no beam (the listener silently discards it by state).
     public bool SpawningEnabled { get; set; } = true;
 
+    // Per-person walked-distance state, keyed by the tracker's own track id -
+    // not by array index, which breaks the moment a person leaves/arrives
+    // mid-stream (every later index shifts and inherits a stranger's
+    // accumulated distance) and is trivially gamed by the mouse prototype
+    // (release + click elsewhere reads as the same person at a new array
+    // slot 0, "moving" there instantly).
+    private class TrackState
+    {
+        public Vector2 lastPos;
+        public float distanceSinceSpawn;
+        public float nextThreshold;
+    }
+
+    private class Orphan
+    {
+        public TrackState state;
+        public float droppedAt;
+    }
+
     private IFloorTracker tracker;
-    private readonly List<Vector2> lastPositions = new List<Vector2>();
-    private readonly List<float> distanceSinceSpawn = new List<float>();
-    private readonly List<float> nextThreshold = new List<float>();
+    private readonly Dictionary<int, TrackState> tracks = new Dictionary<int, TrackState>();
+    private readonly List<int> staleIds = new List<int>();
+    private readonly List<Orphan> orphans = new List<Orphan>();
     private List<EnergyTopicData> bag = new List<EnergyTopicData>();
 
     private void Awake()
@@ -40,9 +67,8 @@ public class FloorIconSpawner : MonoBehaviour
 
     public void ResetSpawner()
     {
-        lastPositions.Clear();
-        distanceSinceSpawn.Clear();
-        nextThreshold.Clear();
+        tracks.Clear();
+        orphans.Clear();
         SeenTypeIds.Clear();
         RefillBag();
 
@@ -58,26 +84,57 @@ public class FloorIconSpawner : MonoBehaviour
         if (tracker == null) return;
         var positions = tracker.GetTrackedPositions();
 
-        while (lastPositions.Count < positions.Count)
-        {
-            lastPositions.Add(positions[lastPositions.Count]);
-            distanceSinceSpawn.Add(0f);
-            nextThreshold.Add(UnityEngine.Random.Range(minSpawnDistance, maxSpawnDistance));
-        }
+        staleIds.Clear();
+        staleIds.AddRange(tracks.Keys);
 
         for (int i = 0; i < positions.Count; i++)
         {
-            float moved = Vector2.Distance(lastPositions[i], positions[i]);
-            distanceSinceSpawn[i] += moved;
-            lastPositions[i] = positions[i];
+            var p = positions[i];
+            staleIds.Remove(p.id);
 
-            if (distanceSinceSpawn[i] >= nextThreshold[i])
+            if (!tracks.TryGetValue(p.id, out var st))
             {
-                distanceSinceSpawn[i] = 0f;
-                nextThreshold[i] = UnityEngine.Random.Range(minSpawnDistance, maxSpawnDistance);
-                SpawnAt(positions[i]);
+                // First sighting of this id - try to pick up a just-lost
+                // track's progress instead of assuming a brand new person.
+                st = TakeOrphanNear(p.pos);
+                if (st != null) st.lastPos = p.pos; // snap to here - don't count the id-swap gap itself as "moved"
+                else st = new TrackState { lastPos = p.pos, nextThreshold = UnityEngine.Random.Range(minSpawnDistance, maxSpawnDistance) };
+                tracks[p.id] = st;
+                continue; // don't count a "move" yet (there's nothing newer to compare against)
+            }
+
+            float moved = Vector2.Distance(st.lastPos, p.pos);
+            st.distanceSinceSpawn += moved;
+            st.lastPos = p.pos;
+
+            if (st.distanceSinceSpawn >= st.nextThreshold)
+            {
+                st.distanceSinceSpawn = 0f;
+                st.nextThreshold = UnityEngine.Random.Range(minSpawnDistance, maxSpawnDistance);
+                SpawnAt(p.pos);
             }
         }
+
+        foreach (var id in staleIds)
+        {
+            orphans.Add(new Orphan { state = tracks[id], droppedAt = Time.time });
+            tracks.Remove(id);
+        }
+        orphans.RemoveAll(o => Time.time - o.droppedAt > reattachWindow);
+    }
+
+    private TrackState TakeOrphanNear(Vector2 pos)
+    {
+        for (int i = 0; i < orphans.Count; i++)
+        {
+            if (Vector2.Distance(orphans[i].state.lastPos, pos) <= reattachRadius)
+            {
+                var st = orphans[i].state;
+                orphans.RemoveAt(i);
+                return st;
+            }
+        }
+        return null;
     }
 
     private void SpawnAt(Vector2 floorPosMeters)

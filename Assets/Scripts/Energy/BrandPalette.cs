@@ -3,28 +3,32 @@ using UnityEngine;
 
 // Forces every per-topic icon/beam tint into just the 3 PV Gas key-visual
 // colors (replacing each topic's own distinct hue) - deterministic per
-// topic so the same product always gets the same one of the 3. Each topic
-// is hand-assigned to whichever of the 3 its own original color (see the
-// EnergyTopicData assets under Assets/Data/EnergyTopics) actually reads
-// closest to, instead of an arbitrary hash: the blue-ish ones (condensate,
-// dry_gas_fertilizer, lng) -> Blue, the green/teal ones (green_hydro, lpg)
-// -> Green, the warm/neutral ones (cng, dry_gas_power, steel_pipe) -> White.
+// topic so the same product always gets the same one of the 3. Rebalanced
+// to a 4 Green / 2 Blue / 2 White split per request: condensate and
+// dry_gas_fertilizer -> Blue; green_hydro, lpg, lng and steel_pipe ->
+// Green; cng and dry_gas_power -> White.
 public static class BrandPalette
 {
-    public static readonly Color White = Color.white;
-    public static readonly Color Green = new Color(0f, 0.62f, 0.34f);
-    public static readonly Color Blue = new Color(0.1f, 0.4f, 0.85f);
+    // Not literal (1,1,1) - pure white is always at peak luma regardless of
+    // intensity, which read noticeably brighter than Green/Blue (both have
+    // at least one low channel). Dimmed to roughly match their luma.
+    public static readonly Color White = new Color(0.4f, 0.4f, 0.4f);
+    public static readonly Color Green = new Color(0f, 1f, 0.34f);
+    // Base hex 384084, with G pinned to 0.7 (not the hex's own 64/255) to
+    // keep the same brightness compensation as the other 2 colors. R/B
+    // scaled to ~70% to deepen/darken the tone per request.
+    public static readonly Color Blue = new Color(0x38 / 255f * 0.7f, 0.7f, 0x84 / 255f * 0.7f);
 
     private static readonly Dictionary<string, Color> ByTopic = new Dictionary<string, Color>
     {
         { "condensate", Blue },
         { "dry_gas_fertilizer", Blue },
-        { "lng", Blue },
+        { "lng", Green },
         { "green_hydro", Green },
         { "lpg", Green },
+        { "steel_pipe", Green },
         { "cng", White },
         { "dry_gas_power", White },
-        { "steel_pipe", White },
     };
 
     public static Color For(string topicId)

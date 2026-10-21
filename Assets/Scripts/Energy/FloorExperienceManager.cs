@@ -25,7 +25,8 @@ public class FloorExperienceManager : MonoBehaviour
     [SerializeField] private float burstExpandDuration = 0.7f;
     [SerializeField] private float burstFadeDuration = 0.4f;
     [SerializeField] private float burstIntensity = 3.2f; // brightness boost so it doesn't sink into a same-hue bkg
-    [SerializeField] private float beamIntensity = 4f; // gamma-lift exponent (FlowRibbon.shader) - 1 = unchanged, >1 brightens, tuned against the bkg (Lỗi 2)
+    [SerializeField] private float beamIntensity = 1f; // HDR emission intensity (FlowRibbon.shader _EmissionIntensity) - needs the scene's Bloom Volume to actually glow, not just brighten
+    [SerializeField] private float beamEmissionSpread = 1f; // how wide the emission glow falls off sideways from the beam (FlowRibbon.shader _EmissionSpread) - lower = tighter, hugs the beam more
 
     private IFloorTracker tracker;
     private float cycleTimer;
@@ -98,20 +99,29 @@ public class FloorExperienceManager : MonoBehaviour
         float soakDuration = beamTrailLength / Mathf.Max(travelSpeed, 1f);
         float trailFraction = beamTrailLength / Mathf.Max(distance, 1f);
 
+        // FlowRibbon.shader always normalizes _Color to peak channel = 1
+        // regardless of input, so white (already all-1) reads at the
+        // highest possible luma while green/blue (each missing a channel)
+        // read dimmer even at the same _EmissionIntensity - scale white's
+        // emission down to roughly match the other two.
+        float colorLumaComp = BrandPalette.IsWhite(color) ? 0.55f : 1f;
+
         FlowBeam beam = null;
         beam = FlowBeam.Create(mergedCanvas, iconPos, flamePos, color, beamDuration,
             seed, 0f, true, true, 0,
             onArrive: () =>
             {
-                // Trigger the finale off the flame actually reaching full,
-                // not off the spawn count - otherwise it fires the instant
-                // the 8th icon appears, while that beam is still mid-flight
-                // and the flame isn't actually charged yet.
-                if (centerLed.AdvanceFill(soakDuration)) EnterFinale();
+                // Trigger the finale off the flame actually *finishing* its
+                // fill animation, not off the 8th beam merely arriving -
+                // AdvanceFill's fill-bar tween still takes `soakDuration` to
+                // visually reach 8/8 after this call, so firing immediately
+                // here started the finale while the flame was still
+                // visibly ramping up, not yet full.
+                centerLed.AdvanceFill(soakDuration, EnterFinale);
                 beam.ConsumeIntoFlame(trailFraction, soakDuration);
             },
-            bandHalf: beamWidth, waveAmp: beamWaveAmp, trailLength: beamTrailLength, intensity: beamIntensity,
-            arrivalTarget: centerLed.Flame);
+            bandHalf: beamWidth, waveAmp: beamWaveAmp, trailLength: beamTrailLength, intensity: beamIntensity * colorLumaComp,
+            arrivalTarget: centerLed.Flame, emissionSpread: beamEmissionSpread);
         activeFloorBeams.Add(beam);
     }
 

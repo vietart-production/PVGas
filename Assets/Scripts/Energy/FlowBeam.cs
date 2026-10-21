@@ -54,7 +54,7 @@ public class FlowBeam : MonoBehaviour
         float seed, float pathStartDistance, bool pinchStart, bool pinchEnd, int siblingIndex, Action onArrive,
         bool alignToDirection = false, float bandHalf = BandHalf, float waveAmp = WaveAmp,
         float glowWidth = 1f, float intensity = 1f, float trailLength = 100000f, float spinSpeed = 0f,
-        RectTransform arrivalTarget = null)
+        RectTransform arrivalTarget = null, float emissionSpread = 1f)
     {
         float padB = pinchStart ? NodePad : 0f;
         float padT = pinchEnd ? NodePad : 0f;
@@ -117,7 +117,10 @@ public class FlowBeam : MonoBehaviour
         m.SetFloat("_BandHalf", bandHalf);
         m.SetFloat("_WaveAmp", waveAmp);
         m.SetFloat("_GlowWidth", glowWidth);
-        m.SetFloat("_Intensity", intensity);
+        m.SetFloat("_Intensity", 1f); // gamma-lift fixed neutral - the intensity knob now drives real HDR emission below instead
+        m.SetColor("_EmissionColor", color);
+        m.SetFloat("_EmissionIntensity", intensity);
+        m.SetFloat("_EmissionSpread", emissionSpread);
         m.SetFloat("_TrailLength", trailLength);
         m.SetFloat("_SpinSpeed", spinSpeed);
         m.SetFloat("_BendStart", bendStart);

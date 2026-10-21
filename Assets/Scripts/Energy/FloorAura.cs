@@ -30,7 +30,7 @@ public class FloorAura : MonoBehaviour
             bool active = i < positions.Count;
             pool[i].gameObject.SetActive(active);
             if (active)
-                pool[i].anchoredPosition = FloorCoords.MetersToLocal(positions[i], floorArea.rect, floorSizeMeters);
+                pool[i].anchoredPosition = FloorCoords.MetersToLocal(positions[i].pos, floorArea.rect, floorSizeMeters);
         }
     }
 }
